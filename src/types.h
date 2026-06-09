@@ -8,7 +8,9 @@ typedef enum GameState {
     STATE_MENU = 0,
     STATE_HELP,
     STATE_PLAYING,
-    STATE_GAME_OVER
+    STATE_GAME_OVER,
+    STATE_LEADERBOARD,
+    STATE_NAME_ENTRY
 } GameState;
 
 typedef enum PlayerAction {
@@ -29,6 +31,17 @@ typedef enum ObstacleKind {
     BARRIER_HIGH,
     TRAIN_BLOCK
 } ObstacleKind;
+
+typedef struct HighScoreEntry {
+    char name[NAME_MAX_LENGTH];
+    int score;
+    float survival_time;
+} HighScoreEntry;
+
+typedef struct HighScores {
+    HighScoreEntry entries[MAX_HIGH_SCORES];
+    int count;
+} HighScores;
 
 typedef struct Sprite {
     HBITMAP bitmap;
@@ -59,6 +72,7 @@ typedef struct Player {
     float animation_timer;
     float slide_timer;
     float invincible_timer;
+    float jump_buffer_timer;
     PlayerAction action;
     int on_ground;
 } Player;
@@ -92,19 +106,28 @@ typedef struct InputState {
 
 typedef struct Game {
     GameState state;
+    GameState previous_state;
     Player player;
     Obstacle obstacles[MAX_OBSTACLES];
     Background background;
     Assets assets;
     InputState input;
+    HighScores high_scores;
     float base_speed;
     float current_speed;
     float spawn_timer;
+    float hit_freeze_timer;
+    float hit_flash_timer;
     int last_obstacle_kind;
     int obstacle_kind_streak;
     int score;
+    int obstacles_passed;
     float score_accumulator;
     float elapsed;
+    int latest_high_score_rank;
+    char name_input[NAME_INPUT_LENGTH + 1];
+    int name_input_len;
+    float name_entry_timer;
 } Game;
 
 #endif

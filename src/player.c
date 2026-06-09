@@ -22,6 +22,7 @@ void player_init(Player *player)
     player->invincible_timer = 0.0f;
     player->action = PLAYER_RUNNING;
     player->on_ground = 1;
+    player->jump_buffer_timer = 0.0f;
 }
 
 void player_change_lane(Player *player, int direction)
@@ -43,6 +44,9 @@ void player_start_jump(Player *player)
         player->vy = PLAYER_JUMP_SPEED;
         player->on_ground = 0;
         player->action = PLAYER_JUMPING;
+        player->jump_buffer_timer = 0.0f;
+    } else {
+        player->jump_buffer_timer = JUMP_BUFFER_WINDOW;
     }
 }
 
@@ -92,6 +96,13 @@ void player_update(Player *player, float dt)
         }
     }
 
+    if (player->jump_buffer_timer > 0.0f) {
+        player->jump_buffer_timer -= dt;
+        if (player->jump_buffer_timer < 0.0f) {
+            player->jump_buffer_timer = 0.0f;
+        }
+    }
+
     if (!player->on_ground) {
         player->jump_height += player->vy * dt;
         player->vy -= GRAVITY * dt;
@@ -102,6 +113,11 @@ void player_update(Player *player, float dt)
             if (player->action == PLAYER_AIR_DIVE) {
                 player->action = PLAYER_SLIDING;
                 player->slide_timer = SLIDE_DURATION;
+            } else if (player->jump_buffer_timer > 0.0f) {
+                player->vy = PLAYER_JUMP_SPEED;
+                player->on_ground = 0;
+                player->action = PLAYER_JUMPING;
+                player->jump_buffer_timer = 0.0f;
             }
         }
     }

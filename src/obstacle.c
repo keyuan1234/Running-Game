@@ -204,6 +204,7 @@ void obstacles_update(Game *game, float dt)
         if (!obstacle->scored && obstacle->depth < OBSTACLE_REMOVE_DEPTH * 0.35f) {
             obstacle->scored = 1;
             game->score += obstacle->kind == TRAIN_BLOCK ? 25 : 15;
+            game->obstacles_passed += 1;
         }
         if (obstacle->depth < OBSTACLE_REMOVE_DEPTH) {
             obstacle->active = 0;

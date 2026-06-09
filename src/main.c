@@ -9,6 +9,7 @@
 #include "obstacle.h"
 #include "player.h"
 #include "resources.h"
+#include "scores.h"
 #include "sound.h"
 #include "types.h"
 #include "util.h"
@@ -19,9 +20,12 @@ static int g_running = 1;
 static void game_reset(Game *game)
 {
     Assets keep_assets = game->assets;
+    HighScores keep_scores = game->high_scores;
     memset(game, 0, sizeof(*game));
     game->assets = keep_assets;
+    game->high_scores = keep_scores;
     game->state = STATE_PLAYING;
+    game->previous_state = STATE_MENU;
     game->base_speed = START_SPEED;
     game->current_speed = START_SPEED;
     game->spawn_timer = 1.0f;
@@ -30,6 +34,10 @@ static void game_reset(Game *game)
     game->score = 0;
     game->score_accumulator = 0.0f;
     game->elapsed = 0.0f;
+    game->obstacles_passed = 0;
+    game->hit_freeze_timer = 0.0f;
+    game->hit_flash_timer = 0.0f;
+    game->latest_high_score_rank = 0;
     player_init(&game->player);
     background_init(&game->background);
     obstacles_init(game->obstacles, MAX_OBSTACLES);
@@ -39,8 +47,10 @@ static void game_init(Game *game)
 {
     memset(game, 0, sizeof(*game));
     game->state = STATE_MENU;
+    game->previous_state = STATE_MENU;
     game->last_obstacle_kind = -1;
     assets_load(&game->assets);
+    scores_load(&game->high_scores);
     player_init(&game->player);
     background_init(&game->background);
     obstacles_init(game->obstacles, MAX_OBSTACLES);
@@ -85,56 +95,304 @@ static void draw_text_left(HDC hdc, const char *text, int x, int y, int size, CO
 
 static void draw_menu(HDC hdc)
 {
+    RECT panel;
     background_draw(hdc, &g_game.background);
-    draw_text_center(hdc, "SUBWAY RUNNER 2D", 84, 52, RGB(28, 44, 72), FW_BOLD);
-    draw_text_center(hdc, "1  Start Game", 215, 30, RGB(30, 76, 46), FW_BOLD);
-    draw_text_center(hdc, "2  Game Help", 270, 30, RGB(30, 76, 46), FW_BOLD);
-    draw_text_center(hdc, "3  Exit", 325, 30, RGB(134, 52, 52), FW_BOLD);
-    draw_text_center(hdc, "A/D: lanes    Space: jump    S: slide/dive    W: boost", 458, 20, RGB(60, 79, 86), FW_NORMAL);
+    draw_overlay(hdc);
+
+    panel.left = WINDOW_WIDTH / 2 - 320;
+    panel.top = 60;
+    panel.right = WINDOW_WIDTH / 2 + 320;
+    panel.bottom = 470;
+    draw_panel(hdc, panel, PANEL_COLOR, PANEL_BORDER, 24);
+
+    draw_text_center(hdc, "SUBWAY RUNNER 2D", 99, 48, RGB(8, 14, 28), FW_BOLD);
+    draw_text_center(hdc, "SUBWAY RUNNER 2D", 96, 48, RGB(244, 215, 118), FW_BOLD);
+
+    draw_text_center(hdc, "1    Start Game", 225, 28, RGB(160, 210, 140), FW_BOLD);
+    draw_text_center(hdc, "2    Game Help", 278, 28, RGB(160, 210, 140), FW_BOLD);
+    draw_text_center(hdc, "3    Exit", 331, 28, RGB(210, 130, 120), FW_BOLD);
+    draw_text_center(hdc, "4    Leaderboard", 384, 28, RGB(160, 180, 220), FW_BOLD);
+
+    draw_text_center(hdc, "A/D: lanes    Space: jump    S: slide/dive    W: boost", 460, 18, RGB(140, 160, 180), FW_NORMAL);
 }
 
 static void draw_help(HDC hdc)
 {
+    RECT panel;
     background_draw(hdc, &g_game.background);
-    draw_text_center(hdc, "GAME HELP", 80, 44, RGB(28, 44, 72), FW_BOLD);
-    draw_text_left(hdc, "A / D: switch left and right lanes.", 210, 165, 22, RGB(34, 55, 64), FW_NORMAL);
-    draw_text_left(hdc, "Space: jump over low barriers.", 210, 215, 22, RGB(34, 55, 64), FW_NORMAL);
-    draw_text_left(hdc, "S: slide under high barriers; in air it dives down fast.", 210, 265, 22, RGB(34, 55, 64), FW_NORMAL);
-    draw_text_left(hdc, "W: hold to boost. A hit gives 3 seconds of invincibility.", 210, 315, 22, RGB(34, 55, 64), FW_NORMAL);
-    draw_text_center(hdc, "Press Esc to return to menu", 440, 22, RGB(134, 52, 52), FW_BOLD);
+    draw_overlay(hdc);
+
+    panel.left = WINDOW_WIDTH / 2 - 370;
+    panel.top = 60;
+    panel.right = WINDOW_WIDTH / 2 + 370;
+    panel.bottom = 450;
+    draw_panel(hdc, panel, PANEL_COLOR, PANEL_BORDER, 24);
+
+    draw_text_center(hdc, "GAME HELP", 99, 44, RGB(8, 14, 28), FW_BOLD);
+    draw_text_center(hdc, "GAME HELP", 96, 44, RGB(244, 215, 118), FW_BOLD);
+
+    draw_text_center(hdc, "A / D: switch left and right lanes.", 190, 24, PANEL_TEXT_COLOR, FW_NORMAL);
+    draw_text_center(hdc, "Space: jump over low barriers.", 236, 24, PANEL_TEXT_COLOR, FW_NORMAL);
+    draw_text_center(hdc, "S: slide under high barriers; in air it dives down.", 282, 24, PANEL_TEXT_COLOR, FW_NORMAL);
+    draw_text_center(hdc, "W: hold to boost. A hit gives 3 seconds of invincibility.", 328, 24, PANEL_TEXT_COLOR, FW_NORMAL);
+    draw_text_center(hdc, "Jump buffer: press jump before landing to buffer the input.", 370, 22, RGB(160, 180, 210), FW_NORMAL);
+
+    draw_text_center(hdc, "Press Esc to return to menu", 435, 22, RGB(210, 160, 140), FW_BOLD);
 }
 
 static void draw_hud(HDC hdc, const Game *game)
 {
     char buffer[128];
-    sprintf(buffer, "Score: %d", game->score);
-    draw_text_left(hdc, buffer, 24, 18, 22, RGB(24, 44, 62), FW_BOLD);
-    sprintf(buffer, "HP: %d", game->player.hp);
-    draw_text_left(hdc, buffer, 24, 48, 22, RGB(134, 52, 52), FW_BOLD);
+    RECT hud_bar;
+    HBRUSH hud_brush;
+    HPEN hud_pen;
+    HGDIOBJ old_brush;
+    HGDIOBJ old_pen;
+    int i;
+    int gauge_width;
+
+    hud_bar.left = 0;
+    hud_bar.top = 0;
+    hud_bar.right = WINDOW_WIDTH;
+    hud_bar.bottom = 104;
+    hud_brush = CreateSolidBrush(HUD_BAR_COLOR);
+    hud_pen = CreatePen(PS_SOLID, 1, RGB(40, 55, 72));
+    old_brush = SelectObject(hdc, hud_brush);
+    old_pen = SelectObject(hdc, hud_pen);
+    Rectangle(hdc, hud_bar.left, hud_bar.top, hud_bar.right, hud_bar.bottom);
+    SelectObject(hdc, old_pen);
+    SelectObject(hdc, old_brush);
+    DeleteObject(hud_pen);
+    DeleteObject(hud_brush);
+
+    sprintf(buffer, "%06d", game->score);
+    draw_text_left(hdc, buffer, 24, 14, 28, RGB(244, 215, 118), FW_BOLD);
+    draw_text_left(hdc, "SCORE", 24, 42, 14, RGB(140, 160, 180), FW_NORMAL);
+
+    draw_text_left(hdc, "HP", 180, 14, 14, RGB(140, 160, 180), FW_NORMAL);
+    for (i = 0; i < PLAYER_START_HP; ++i) {
+        COLORREF heart_color = i < game->player.hp ? RGB(210, 70, 60) : RGB(50, 50, 60);
+        HPEN heart_pen = CreatePen(PS_SOLID, 2, heart_color);
+        HBRUSH heart_brush = CreateSolidBrush(heart_color);
+        int hx = 180 + i * 36;
+        int hy = 32;
+        SelectObject(hdc, heart_brush);
+        SelectObject(hdc, heart_pen);
+        Ellipse(hdc, hx, hy, hx + 14, hy + 14);
+        Ellipse(hdc, hx + 16, hy, hx + 30, hy + 14);
+        {
+            POINT tri[3];
+            tri[0].x = hx - 1;  tri[0].y = hy + 7;
+            tri[1].x = hx + 15;  tri[1].y = hy + 28;
+            tri[2].x = hx + 31;  tri[2].y = hy + 7;
+            Polygon(hdc, tri, 3);
+        }
+        DeleteObject(heart_pen);
+        DeleteObject(heart_brush);
+    }
+
     sprintf(buffer, "Time: %.1fs", game->elapsed);
-    draw_text_left(hdc, buffer, 780, 18, 22, RGB(24, 44, 62), FW_BOLD);
-    sprintf(buffer, "Speed: %.0f%s", game->current_speed, game->input.boost_down ? " BOOST" : "");
-    draw_text_left(hdc, buffer, 760, 48, 20, RGB(24, 44, 62), FW_BOLD);
-    sprintf(buffer, "Lane: %s", game->player.target_lane == LANE_LEFT ? "Left" :
-            (game->player.target_lane == LANE_RIGHT ? "Right" : "Center"));
-    draw_text_left(hdc, buffer, 24, 78, 20, RGB(24, 44, 62), FW_BOLD);
+    draw_text_left(hdc, buffer, 320, 14, 22, PANEL_TEXT_COLOR, FW_BOLD);
+    sprintf(buffer, "Passed: %d", game->obstacles_passed);
+    draw_text_left(hdc, buffer, 320, 42, 16, RGB(140, 160, 180), FW_NORMAL);
+
+    gauge_width = (int)(200.0f * (game->current_speed - START_SPEED) / (MAX_SPEED * BOOST_MULTIPLIER - START_SPEED));
+    if (gauge_width < 0) gauge_width = 0;
+    if (gauge_width > 200) gauge_width = 200;
+
+    draw_text_left(hdc, "SPEED", 760, 14, 14, RGB(140, 160, 180), FW_NORMAL);
+    {
+        RECT gauge_bg = { 680, 36, 884, 50 };
+        RECT gauge_fill = { 680, 36, 680 + gauge_width, 50 };
+        HBRUSH gauge_bg_brush = CreateSolidBrush(RGB(20, 28, 38));
+        HBRUSH gauge_fill_brush;
+        HGDIOBJ old_gauge_brush;
+        HPEN gauge_pen = CreatePen(PS_SOLID, 1, RGB(40, 55, 72));
+        HGDIOBJ old_gauge_pen;
+
+        if (game->input.boost_down) {
+            gauge_fill_brush = CreateSolidBrush(RGB(244, 180, 60));
+        } else {
+            gauge_fill_brush = CreateSolidBrush(RGB(80, 150, 210));
+        }
+
+        old_gauge_brush = SelectObject(hdc, gauge_bg_brush);
+        old_gauge_pen = SelectObject(hdc, gauge_pen);
+        Rectangle(hdc, gauge_bg.left, gauge_bg.top, gauge_bg.right, gauge_bg.bottom);
+
+        SelectObject(hdc, gauge_fill_brush);
+        SelectObject(hdc, GetStockObject(NULL_PEN));
+        if (gauge_width > 2) {
+            Rectangle(hdc, gauge_fill.left + 1, gauge_fill.top + 1,
+                      gauge_fill.right, gauge_fill.bottom - 1);
+        }
+
+        SelectObject(hdc, old_gauge_pen);
+        SelectObject(hdc, old_gauge_brush);
+        DeleteObject(gauge_pen);
+        DeleteObject(gauge_bg_brush);
+        DeleteObject(gauge_fill_brush);
+    }
+
+    if (game->input.boost_down) {
+        draw_text_left(hdc, "BOOST", 700, 54, 16, RGB(244, 180, 60), FW_BOLD);
+    }
+
     if (player_is_invincible(&game->player)) {
         sprintf(buffer, "INVINCIBLE %.1fs", game->player.invincible_timer);
-        draw_text_center(hdc, buffer, 18, 22, RGB(176, 82, 22), FW_BOLD);
+        draw_text_center(hdc, buffer, 60, 18, RGB(255, 220, 80), FW_BOLD);
     }
 }
 
 static void draw_game_over(HDC hdc)
 {
     char buffer[128];
+    RECT panel;
     background_draw(hdc, &g_game.background);
-    draw_text_center(hdc, "GAME OVER", 110, 52, RGB(128, 40, 40), FW_BOLD);
+    draw_overlay(hdc);
+
+    panel.left = WINDOW_WIDTH / 2 - 320;
+    panel.top = 80;
+    panel.right = WINDOW_WIDTH / 2 + 320;
+    panel.bottom = 460;
+    draw_panel(hdc, panel, PANEL_COLOR, PANEL_BORDER, 24);
+
+    draw_text_center(hdc, "GAME OVER", 123, 52, RGB(8, 14, 28), FW_BOLD);
+    draw_text_center(hdc, "GAME OVER", 120, 52, RGB(210, 100, 80), FW_BOLD);
+
     sprintf(buffer, "Final Score: %d", g_game.score);
-    draw_text_center(hdc, buffer, 220, 30, RGB(28, 44, 72), FW_BOLD);
+    draw_text_center(hdc, buffer, 210, 32, PANEL_HIGHLIGHT_COLOR, FW_BOLD);
+
     sprintf(buffer, "Survival Time: %.1fs", g_game.elapsed);
-    draw_text_center(hdc, buffer, 270, 26, RGB(28, 44, 72), FW_NORMAL);
-    draw_text_center(hdc, "R  Restart", 350, 26, RGB(30, 76, 46), FW_BOLD);
-    draw_text_center(hdc, "Esc  Main Menu", 395, 24, RGB(134, 52, 52), FW_BOLD);
+    draw_text_center(hdc, buffer, 262, 26, PANEL_TEXT_COLOR, FW_NORMAL);
+
+    sprintf(buffer, "Obstacles Passed: %d", g_game.obstacles_passed);
+    draw_text_center(hdc, buffer, 306, 24, PANEL_TEXT_COLOR, FW_NORMAL);
+
+    if (g_game.latest_high_score_rank > 0) {
+        sprintf(buffer, "NEW HIGH SCORE!  Rank #%d", g_game.latest_high_score_rank);
+        draw_text_center(hdc, buffer, 170, 26, RGB(255, 220, 80), FW_BOLD);
+    }
+
+    draw_text_center(hdc, "R    Restart", 376, 28, RGB(160, 210, 140), FW_BOLD);
+    draw_text_center(hdc, "L    Leaderboard", 418, 24, RGB(160, 180, 220), FW_BOLD);
+    draw_text_center(hdc, "Esc  Main Menu", 455, 24, RGB(210, 130, 120), FW_BOLD);
+}
+
+static void draw_leaderboard(HDC hdc)
+{
+    RECT panel;
+    int i;
+    int y;
+    char buffer[128];
+
+    background_draw(hdc, &g_game.background);
+    draw_overlay(hdc);
+
+    panel.left = WINDOW_WIDTH / 2 - 350;
+    panel.top = 44;
+    panel.right = WINDOW_WIDTH / 2 + 350;
+    panel.bottom = 500;
+    draw_panel(hdc, panel, PANEL_COLOR, PANEL_BORDER, 24);
+
+    draw_text_center(hdc, "HIGH SCORES", 69, 44, RGB(8, 14, 28), FW_BOLD);
+    draw_text_center(hdc, "HIGH SCORES", 66, 44, PANEL_TITLE_COLOR, FW_BOLD);
+
+    y = 130;
+    draw_text_center(hdc, "Rank    Name          Score          Time", y - 22, 18, RGB(120, 140, 160), FW_NORMAL);
+
+    if (g_game.high_scores.count == 0) {
+        draw_text_center(hdc, "No scores yet -- play a game!", 260, 22, PANEL_TEXT_COLOR, FW_NORMAL);
+    } else {
+        for (i = 0; i < g_game.high_scores.count; ++i) {
+            const HighScoreEntry *entry = &g_game.high_scores.entries[i];
+            COLORREF row_color;
+            COLORREF rank_color;
+
+            if (g_game.latest_high_score_rank == i + 1) {
+                row_color = PANEL_HIGHLIGHT_COLOR;
+                rank_color = PANEL_HIGHLIGHT_COLOR;
+                {
+                    RECT hl_rect;
+                    hl_rect.left = panel.left + 20;
+                    hl_rect.top = y - 3;
+                    hl_rect.right = panel.right - 20;
+                    hl_rect.bottom = y + 29;
+                    {
+                        HBRUSH hl_brush = CreateSolidBrush(RGB(32, 36, 52));
+                        HGDIOBJ old_hl = SelectObject(hdc, hl_brush);
+                        HPEN hl_pen = CreatePen(PS_SOLID, 1, RGB(80, 70, 30));
+                        HGDIOBJ old_hlp = SelectObject(hdc, hl_pen);
+                        RoundRect(hdc, hl_rect.left, hl_rect.top, hl_rect.right, hl_rect.bottom, 8, 8);
+                        SelectObject(hdc, old_hlp);
+                        SelectObject(hdc, old_hl);
+                        DeleteObject(hl_pen);
+                        DeleteObject(hl_brush);
+                    }
+                }
+            } else {
+                row_color = PANEL_TEXT_COLOR;
+                rank_color = i == 0 ? RGB(255, 215, 0) :
+                            (i == 1 ? RGB(192, 192, 192) :
+                            (i == 2 ? RGB(205, 127, 50) : RGB(120, 140, 160)));
+            }
+
+            sprintf(buffer, "%d", i + 1);
+            draw_text_left(hdc, buffer, 50, y, 20, rank_color, FW_BOLD);
+
+            draw_text_left(hdc, entry->name, 110, y, 20, row_color, FW_NORMAL);
+
+            sprintf(buffer, "%d", entry->score);
+            draw_text_left(hdc, buffer, 360, y, 20, row_color, FW_BOLD);
+
+            sprintf(buffer, "%.1fs", entry->survival_time);
+            draw_text_left(hdc, buffer, 520, y, 20, row_color, FW_NORMAL);
+
+            y += 34;
+        }
+    }
+
+    draw_text_center(hdc, "Esc  Return", 470, 20, RGB(210, 160, 140), FW_BOLD);
+}
+
+static void draw_name_entry(HDC hdc)
+{
+    RECT panel;
+    char display_name[32];
+    char buffer[128];
+    char cursor_char[2];
+
+    background_draw(hdc, &g_game.background);
+    draw_overlay(hdc);
+
+    panel.left = WINDOW_WIDTH / 2 - 280;
+    panel.top = 160;
+    panel.right = WINDOW_WIDTH / 2 + 280;
+    panel.bottom = 370;
+    draw_panel(hdc, panel, PANEL_COLOR, PANEL_BORDER, 24);
+
+    draw_text_center(hdc, "NEW HIGH SCORE!", 192, 26, PANEL_HIGHLIGHT_COLOR, FW_BOLD);
+
+    draw_text_center(hdc, "Enter your name:", 248, 22, PANEL_TEXT_COLOR, FW_NORMAL);
+
+    if (g_game.name_input_len == 0) {
+        strcpy(display_name, "---");
+    } else {
+        strncpy(display_name, g_game.name_input, (size_t)g_game.name_input_len);
+        display_name[g_game.name_input_len] = '\0';
+    }
+
+    cursor_char[0] = ((int)(g_game.name_entry_timer * 3.0f) % 2) == 0 ? '_' : ' ';
+    cursor_char[1] = '\0';
+    sprintf(buffer, "%s%s", display_name, cursor_char);
+
+    draw_text_center(hdc, buffer, 296, 34, RGB(244, 215, 118), FW_BOLD);
+
+    draw_text_center(hdc, "Enter: confirm    Backspace: delete", 344, 18, RGB(140, 160, 180), FW_NORMAL);
+
+    sprintf(buffer, "Score: %d    Time: %.1fs    Passed: %d",
+            g_game.score, g_game.elapsed, g_game.obstacles_passed);
+    draw_text_center(hdc, buffer, 210, 18, PANEL_TEXT_COLOR, FW_NORMAL);
 }
 
 static void game_update(Game *game, float dt)
@@ -146,8 +404,28 @@ static void game_update(Game *game, float dt)
         dt = 0.05f;
     }
 
-    if (game->state == STATE_MENU || game->state == STATE_HELP || game->state == STATE_GAME_OVER) {
+    if (game->hit_freeze_timer > 0.0f) {
+        game->hit_freeze_timer -= dt;
+        if (game->hit_freeze_timer < 0.0f) {
+            game->hit_freeze_timer = 0.0f;
+        }
+        return;
+    }
+
+    if (game->hit_flash_timer > 0.0f) {
+        game->hit_flash_timer -= dt;
+        if (game->hit_flash_timer < 0.0f) {
+            game->hit_flash_timer = 0.0f;
+        }
+    }
+
+    if (game->state == STATE_MENU || game->state == STATE_HELP ||
+        game->state == STATE_GAME_OVER || game->state == STATE_LEADERBOARD ||
+        game->state == STATE_NAME_ENTRY) {
         background_update(&game->background, dt, START_SPEED * 0.45f);
+        if (game->state == STATE_NAME_ENTRY) {
+            game->name_entry_timer += dt;
+        }
         return;
     }
 
@@ -199,9 +477,19 @@ static void game_update(Game *game, float dt)
             obstacle->hit = 1;
             player_take_hit(&game->player);
             sound_play_hit(&game->assets);
+            game->hit_freeze_timer = (float)HIT_FREEZE_MS / 1000.0f;
+            game->hit_flash_timer = (float)HIT_FLASH_MS / 1000.0f;
             if (game->player.hp <= 0) {
                 game->player.hp = 0;
-                game->state = STATE_GAME_OVER;
+                game->latest_high_score_rank = 0;
+                if (scores_is_high_score(&game->high_scores, game->score)) {
+                    game->name_input_len = 0;
+                    game->name_entry_timer = 0.0f;
+                    memset(game->name_input, 0, sizeof(game->name_input));
+                    game->state = STATE_NAME_ENTRY;
+                } else {
+                    game->state = STATE_GAME_OVER;
+                }
                 break;
             }
         }
@@ -216,11 +504,51 @@ static void game_render(HDC hdc)
         draw_help(hdc);
     } else if (g_game.state == STATE_GAME_OVER) {
         draw_game_over(hdc);
+    } else if (g_game.state == STATE_LEADERBOARD) {
+        draw_leaderboard(hdc);
+    } else if (g_game.state == STATE_NAME_ENTRY) {
+        draw_name_entry(hdc);
     } else {
         background_draw(hdc, &g_game.background);
         obstacles_draw(hdc, g_game.obstacles, MAX_OBSTACLES, &g_game.assets);
         player_draw(hdc, &g_game.player, &g_game.assets);
         draw_hud(hdc, &g_game);
+    }
+
+    if (g_game.hit_flash_timer > 0.0f && g_game.state == STATE_PLAYING) {
+        RECT flash_rect;
+        HBRUSH flash_brush;
+        BLENDFUNCTION blend;
+        HDC flash_dc;
+        HBITMAP flash_bmp;
+        HGDIOBJ old_flash_bmp;
+        int alpha = (int)(160.0f * g_game.hit_flash_timer / ((float)HIT_FLASH_MS / 1000.0f));
+
+        flash_rect.left = 0;
+        flash_rect.top = 0;
+        flash_rect.right = WINDOW_WIDTH;
+        flash_rect.bottom = WINDOW_HEIGHT;
+
+        flash_dc = CreateCompatibleDC(hdc);
+        flash_bmp = CreateCompatibleBitmap(hdc, WINDOW_WIDTH, WINDOW_HEIGHT);
+        old_flash_bmp = SelectObject(flash_dc, flash_bmp);
+
+        flash_brush = CreateSolidBrush(RGB(180, 20, 10));
+        FillRect(flash_dc, &flash_rect, flash_brush);
+        DeleteObject(flash_brush);
+
+        memset(&blend, 0, sizeof(blend));
+        blend.BlendOp = AC_SRC_OVER;
+        blend.BlendFlags = 0;
+        blend.SourceConstantAlpha = (BYTE)alpha;
+        blend.AlphaFormat = 0;
+
+        AlphaBlend(hdc, 0, 0, WINDOW_WIDTH, WINDOW_HEIGHT,
+                   flash_dc, 0, 0, WINDOW_WIDTH, WINDOW_HEIGHT, blend);
+
+        SelectObject(flash_dc, old_flash_bmp);
+        DeleteObject(flash_bmp);
+        DeleteDC(flash_dc);
     }
 }
 
@@ -257,6 +585,10 @@ static void handle_key_down(WPARAM key, LPARAM lparam)
         } else if (key == '3') {
             g_running = 0;
             PostQuitMessage(0);
+        } else if (key == '4') {
+            g_game.previous_state = STATE_MENU;
+            g_game.latest_high_score_rank = 0;
+            g_game.state = STATE_LEADERBOARD;
         }
         return;
     }
@@ -273,6 +605,46 @@ static void handle_key_down(WPARAM key, LPARAM lparam)
             game_reset(&g_game);
         } else if (key == VK_ESCAPE) {
             g_game.state = STATE_MENU;
+        } else if (key == 'L') {
+            g_game.previous_state = STATE_GAME_OVER;
+            g_game.state = STATE_LEADERBOARD;
+        }
+        return;
+    }
+
+    if (g_game.state == STATE_LEADERBOARD) {
+        if (key == VK_ESCAPE) {
+            g_game.state = g_game.previous_state;
+            g_game.latest_high_score_rank = 0;
+            if (g_game.previous_state == STATE_GAME_OVER) {
+                g_game.state = STATE_GAME_OVER;
+            }
+        }
+        return;
+    }
+
+    if (g_game.state == STATE_NAME_ENTRY) {
+        if (key == VK_RETURN) {
+            if (g_game.name_input_len == 0) {
+                strcpy(g_game.name_input, "AAA");
+                g_game.name_input_len = 3;
+            }
+            scores_insert(&g_game.high_scores, g_game.name_input, g_game.score, g_game.elapsed);
+            scores_save(&g_game.high_scores);
+            g_game.latest_high_score_rank = scores_get_rank(&g_game.high_scores, g_game.score);
+            g_game.previous_state = STATE_MENU;
+            g_game.state = STATE_LEADERBOARD;
+        } else if (key == VK_BACK && g_game.name_input_len > 0) {
+            g_game.name_input_len -= 1;
+            g_game.name_input[g_game.name_input_len] = '\0';
+        } else if (key >= 'A' && key <= 'Z' && g_game.name_input_len < NAME_INPUT_LENGTH && first_press) {
+            g_game.name_input[g_game.name_input_len] = (char)key;
+            g_game.name_input_len += 1;
+            g_game.name_input[g_game.name_input_len] = '\0';
+        } else if (key >= '0' && key <= '9' && g_game.name_input_len < NAME_INPUT_LENGTH && first_press) {
+            g_game.name_input[g_game.name_input_len] = (char)key;
+            g_game.name_input_len += 1;
+            g_game.name_input[g_game.name_input_len] = '\0';
         }
         return;
     }

@@ -5,7 +5,7 @@ OBJ := $(SRC:.c=.o)
 
 CFLAGS := -std=c11 -Wall -Wextra -O2
 LDFLAGS := -mwindows
-LDLIBS := -luser32 -lgdi32 -lwinmm
+LDLIBS := -luser32 -lgdi32 -lwinmm -lmsimg32
 
 .PHONY: all clean run
 
