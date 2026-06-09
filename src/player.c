@@ -6,8 +6,65 @@ static float lane_screen_x(Lane lane)
     return (float)(WINDOW_WIDTH / 2 + ((int)lane - 1) * LANE_BOTTOM_SPACING);
 }
 
-void player_init(Player *player)
+float player_gravity(const Player *player)
 {
+    switch (player->character) {
+    case CHAR_JUMPER:  return CHAR_JUMPER_GRAVITY;
+    default:           return GRAVITY;
+    }
+}
+
+float player_jump_speed(const Player *player)
+{
+    switch (player->character) {
+    case CHAR_JUMPER:  return CHAR_JUMPER_JUMP;
+    default:           return PLAYER_JUMP_SPEED;
+    }
+}
+
+float player_invincible_duration(const Player *player)
+{
+    switch (player->character) {
+    case CHAR_TANK:    return CHAR_TANK_INVINCIBLE;
+    default:           return INVINCIBLE_DURATION;
+    }
+}
+
+float player_speed_multiplier(const Player *player)
+{
+    switch (player->character) {
+    case CHAR_SPRINTER: return CHAR_SPRINTER_SPEED;
+    default:            return 1.0f;
+    }
+}
+
+float player_speed_gain_multiplier(const Player *player)
+{
+    switch (player->character) {
+    case CHAR_SPRINTER: return CHAR_SPRINTER_GAIN_MULT;
+    case CHAR_TANK:     return CHAR_TANK_GAIN_MULT;
+    default:            return 1.0f;
+    }
+}
+
+int player_is_low_barrier_immune(const Player *player)
+{
+    return player->character == CHAR_TANK;
+}
+
+static int player_start_hp(CharacterType character)
+{
+    switch (character) {
+    case CHAR_SPRINTER: return CHAR_SPRINTER_HP;
+    case CHAR_TANK:     return CHAR_TANK_HP;
+    case CHAR_JUMPER:   return CHAR_JUMPER_HP;
+    default:            return CHAR_RUNNER_HP;
+    }
+}
+
+void player_init(Player *player, CharacterType character)
+{
+    player->character = character;
     player->lane = LANE_CENTER;
     player->target_lane = LANE_CENTER;
     player->screen_x = lane_screen_x(LANE_CENTER);
@@ -15,7 +72,7 @@ void player_init(Player *player)
     player->vy = 0.0f;
     player->width = PLAYER_WIDTH;
     player->height = PLAYER_HEIGHT;
-    player->hp = PLAYER_START_HP;
+    player->hp = player_start_hp(character);
     player->animation_frame = 0;
     player->animation_timer = 0.0f;
     player->slide_timer = 0.0f;
@@ -23,6 +80,7 @@ void player_init(Player *player)
     player->action = PLAYER_RUNNING;
     player->on_ground = 1;
     player->jump_buffer_timer = 0.0f;
+    player->double_jump_used = 0;
 }
 
 void player_change_lane(Player *player, int direction)
@@ -41,10 +99,18 @@ void player_change_lane(Player *player, int direction)
 void player_start_jump(Player *player)
 {
     if (player->on_ground && player->action != PLAYER_SLIDING) {
-        player->vy = PLAYER_JUMP_SPEED;
+        player->vy = player_jump_speed(player);
         player->on_ground = 0;
         player->action = PLAYER_JUMPING;
         player->jump_buffer_timer = 0.0f;
+        player->double_jump_used = 0;
+    } else if (!player->on_ground &&
+               player->character == CHAR_JUMPER &&
+               !player->double_jump_used) {
+        player->vy = player_jump_speed(player) * 0.85f;
+        player->action = PLAYER_JUMPING;
+        player->jump_buffer_timer = 0.0f;
+        player->double_jump_used = 1;
     } else {
         player->jump_buffer_timer = JUMP_BUFFER_WINDOW;
     }
@@ -70,7 +136,7 @@ void player_take_hit(Player *player)
     if (player->hp < 0) {
         player->hp = 0;
     }
-    player->invincible_timer = INVINCIBLE_DURATION;
+    player->invincible_timer = player_invincible_duration(player);
 }
 
 int player_is_invincible(const Player *player)
@@ -83,6 +149,8 @@ void player_update(Player *player, float dt)
     float target_x = lane_screen_x(player->target_lane);
     float delta_x = target_x - player->screen_x;
     float step = delta_x * LANE_MOVE_SPEED * dt;
+    float grav = player_gravity(player);
+
     if (step > -1.0f && step < 1.0f) {
         player->screen_x = target_x;
     } else {
@@ -105,16 +173,17 @@ void player_update(Player *player, float dt)
 
     if (!player->on_ground) {
         player->jump_height += player->vy * dt;
-        player->vy -= GRAVITY * dt;
+        player->vy -= grav * dt;
         if (player->jump_height <= 0.0f) {
             player->jump_height = 0.0f;
             player->vy = 0.0f;
             player->on_ground = 1;
+            player->double_jump_used = 0;
             if (player->action == PLAYER_AIR_DIVE) {
                 player->action = PLAYER_SLIDING;
                 player->slide_timer = SLIDE_DURATION;
             } else if (player->jump_buffer_timer > 0.0f) {
-                player->vy = PLAYER_JUMP_SPEED;
+                player->vy = player_jump_speed(player);
                 player->on_ground = 0;
                 player->action = PLAYER_JUMPING;
                 player->jump_buffer_timer = 0.0f;
@@ -167,15 +236,37 @@ RECT player_get_rect(const Player *player)
     return rect;
 }
 
+static COLORREF char_body_color(CharacterType c)
+{
+    switch (c) {
+    case CHAR_SPRINTER: return RGB(76, 175, 80);
+    case CHAR_TANK:     return RGB(70, 90, 130);
+    case CHAR_JUMPER:   return RGB(156, 39, 176);
+    default:            return RGB(244, 139, 66);
+    }
+}
+
+static COLORREF char_accent_color(CharacterType c)
+{
+    switch (c) {
+    case CHAR_SPRINTER: return RGB(255, 235, 59);
+    case CHAR_TANK:     return RGB(200, 60, 60);
+    case CHAR_JUMPER:   return RGB(0, 188, 212);
+    default:            return RGB(39, 129, 214);
+    }
+}
+
 static void draw_player_placeholder(HDC hdc, const Player *player)
 {
     int x = (int)(player->screen_x - player->width / 2);
     int y = PLAYER_BASE_Y - player->height - (int)player->jump_height;
     int h = player->height;
-    HBRUSH body = CreateSolidBrush(RGB(244, 139, 66));
+    COLORREF body_c = char_body_color(player->character);
+    COLORREF accent_c = char_accent_color(player->character);
+    HBRUSH body = CreateSolidBrush(body_c);
     HBRUSH head = CreateSolidBrush(RGB(255, 216, 168));
     HBRUSH dark = CreateSolidBrush(RGB(44, 62, 80));
-    HBRUSH accent = CreateSolidBrush(RGB(39, 129, 214));
+    HBRUSH accent = CreateSolidBrush(accent_c);
     HPEN pen = CreatePen(PS_SOLID, 2, RGB(39, 49, 63));
     HGDIOBJ old_brush = SelectObject(hdc, body);
     HGDIOBJ old_pen = SelectObject(hdc, pen);
@@ -245,9 +336,9 @@ void player_draw(HDC hdc, const Player *player, const Assets *assets)
     }
 
     if (sprite && sprite->loaded) {
-        int x = (int)(player->screen_x - player->width / 2);
-        int y = PLAYER_BASE_Y - player->height - (int)player->jump_height;
-        sprite_draw(hdc, sprite, x, y, player->width, player->height);
+        int sx = (int)(player->screen_x - player->width / 2);
+        int sy = PLAYER_BASE_Y - player->height - (int)player->jump_height;
+        sprite_draw(hdc, sprite, sx, sy, player->width, player->height);
     } else {
         draw_player_placeholder(hdc, player);
     }

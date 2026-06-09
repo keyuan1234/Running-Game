@@ -46,17 +46,17 @@ int scores_is_high_score(const HighScores *scores, int score)
     return score > scores->entries[scores->count - 1].score;
 }
 
-void scores_insert(HighScores *scores, const char *name, int score, float survival_time)
+int scores_insert(HighScores *scores, const char *name, int score, float survival_time)
 {
     int i;
     int pos = 0;
 
-    while (pos < scores->count && scores->entries[pos].score >= score) {
+    while (pos < scores->count && scores->entries[pos].score > score) {
         ++pos;
     }
 
     if (pos >= MAX_HIGH_SCORES) {
-        return;
+        return 0;
     }
 
     for (i = scores->count; i > pos; --i) {
@@ -71,12 +71,14 @@ void scores_insert(HighScores *scores, const char *name, int score, float surviv
     if (scores->count < MAX_HIGH_SCORES) {
         ++scores->count;
     }
+
+    return pos + 1;
 }
 
 int scores_get_rank(const HighScores *scores, int score)
 {
     int rank = 0;
-    while (rank < scores->count && scores->entries[rank].score >= score) {
+    while (rank < scores->count && scores->entries[rank].score > score) {
         ++rank;
     }
     return rank + 1;

@@ -7,6 +7,7 @@
 typedef enum GameState {
     STATE_MENU = 0,
     STATE_HELP,
+    STATE_CHAR_SELECT,
     STATE_PLAYING,
     STATE_GAME_OVER,
     STATE_LEADERBOARD,
@@ -31,6 +32,14 @@ typedef enum ObstacleKind {
     BARRIER_HIGH,
     TRAIN_BLOCK
 } ObstacleKind;
+
+typedef enum CharacterType {
+    CHAR_RUNNER = 0,
+    CHAR_SPRINTER,
+    CHAR_TANK,
+    CHAR_JUMPER,
+    CHAR_COUNT
+} CharacterType;
 
 typedef struct HighScoreEntry {
     char name[NAME_MAX_LENGTH];
@@ -60,6 +69,7 @@ typedef struct Assets {
 } Assets;
 
 typedef struct Player {
+    CharacterType character;
     Lane lane;
     Lane target_lane;
     float screen_x;
@@ -75,6 +85,7 @@ typedef struct Player {
     float jump_buffer_timer;
     PlayerAction action;
     int on_ground;
+    int double_jump_used;
 } Player;
 
 typedef struct Obstacle {
@@ -107,6 +118,8 @@ typedef struct InputState {
 typedef struct Game {
     GameState state;
     GameState previous_state;
+    CharacterType character;
+    int char_select_index;
     Player player;
     Obstacle obstacles[MAX_OBSTACLES];
     Background background;
