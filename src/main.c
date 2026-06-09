@@ -299,7 +299,15 @@ static void draw_leaderboard(HDC hdc)
     draw_text_center(hdc, "HIGH SCORES", 66, 44, PANEL_TITLE_COLOR, FW_BOLD);
 
     y = 130;
-    draw_text_center(hdc, "Rank    Name          Score          Time", y - 22, 18, RGB(120, 140, 160), FW_NORMAL);
+    {
+        int col_rank = panel.left + 35;
+        int col_name = panel.left + 90;
+        int col_score = panel.left + 350;
+        int col_time = panel.left + 510;
+        draw_text_left(hdc, "Rank", col_rank, y - 28, 18, RGB(120, 140, 160), FW_BOLD);
+        draw_text_left(hdc, "Name", col_name, y - 28, 18, RGB(120, 140, 160), FW_BOLD);
+        draw_text_left(hdc, "Score", col_score, y - 28, 18, RGB(120, 140, 160), FW_BOLD);
+        draw_text_left(hdc, "Time", col_time, y - 28, 18, RGB(120, 140, 160), FW_BOLD);
 
     if (g_game.high_scores.count == 0) {
         draw_text_center(hdc, "No scores yet -- play a game!", 260, 22, PANEL_TEXT_COLOR, FW_NORMAL);
@@ -314,9 +322,9 @@ static void draw_leaderboard(HDC hdc)
                 rank_color = PANEL_HIGHLIGHT_COLOR;
                 {
                     RECT hl_rect;
-                    hl_rect.left = panel.left + 20;
+                    hl_rect.left = panel.left + 24;
                     hl_rect.top = y - 3;
-                    hl_rect.right = panel.right - 20;
+                    hl_rect.right = panel.right - 24;
                     hl_rect.bottom = y + 29;
                     {
                         HBRUSH hl_brush = CreateSolidBrush(RGB(32, 36, 52));
@@ -338,18 +346,19 @@ static void draw_leaderboard(HDC hdc)
             }
 
             sprintf(buffer, "%d", i + 1);
-            draw_text_left(hdc, buffer, 50, y, 20, rank_color, FW_BOLD);
+            draw_text_left(hdc, buffer, col_rank, y, 20, rank_color, FW_BOLD);
 
-            draw_text_left(hdc, entry->name, 110, y, 20, row_color, FW_NORMAL);
+            draw_text_left(hdc, entry->name, col_name, y, 20, row_color, FW_NORMAL);
 
             sprintf(buffer, "%d", entry->score);
-            draw_text_left(hdc, buffer, 360, y, 20, row_color, FW_BOLD);
+            draw_text_left(hdc, buffer, col_score, y, 20, row_color, FW_BOLD);
 
             sprintf(buffer, "%.1fs", entry->survival_time);
-            draw_text_left(hdc, buffer, 520, y, 20, row_color, FW_NORMAL);
+            draw_text_left(hdc, buffer, col_time, y, 20, row_color, FW_NORMAL);
 
             y += 34;
         }
+    }
     }
 
     draw_text_center(hdc, "Esc  Return", 470, 20, RGB(210, 160, 140), FW_BOLD);
