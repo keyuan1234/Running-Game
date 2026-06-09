@@ -1,58 +1,70 @@
-# 地铁跑酷 2D
+# Subway Runner 2D
 
-纯 C11 + Win32/GDI 写的一个伪 3D 跑酷小游戏。没依赖任何第三方图形库——EasyX
-的 MinGW 头文件需要 C++ 编译所以没用，全部 GDI 裸写。
+A strict C11 Windows pseudo-3D runner game built with Win32/GDI. The project
+does not use EasyX because the bundled EasyX for MinGW headers require C++.
 
-## 编译运行
-
-Windows 上装好 MinGW-w64：
+## Build And Run
 
 ```powershell
-mingw32-make           # 编译
-mingw32-make clean     # 清理 .o 和 exe
-mingw32-make run       # 编译完直接跑
-```
-
-或者直接：
-
-```powershell
+mingw32-make
 .\running_game.exe
 ```
 
-## 操作
+Useful commands:
 
-- `1` 开始游戏
-- `2` 游戏帮助
-- `3` 退出
-- `4` 排行榜
-- `A` 左移一个车道
-- `D` 右移一个车道
-- `Space` 跳跃，翻过低障碍
-- `S` 滑铲，钻过高障碍；在空中按时快速下坠
-- `W` 按住加速
-- `Esc` 返回菜单
-- `R` 结束后重开
-- `L` 结束后查看排行榜
+```powershell
+mingw32-make clean
+mingw32-make run
+```
 
-## 玩法
+## Controls
 
-三条车道，障碍物从远处逼近（近大远小，伪 3D）。
+- `1`: start game / character select
+- `2`: help
+- `3`: exit
+- `4`: recent runs
+- `A`: move one lane left
+- `D`: move one lane right
+- `Space`: jump over red low barriers
+- `S`: slide under blue high barriers; in air, dive down quickly
+- `W`: hold to boost speed
+- `Esc`: return
+- `R`: restart after game over
+- `L`: recent runs after game over
 
-- 红色低栏：跳过去
-- 蓝色高栏：滑铲钻过去
-- 火车车厢：换车道躲
-- 受伤后 3 秒无敌，角色闪烁
-- 有跳跃缓冲：落地前 0.12 秒内按跳跃，落地后自动起跳
+## Gameplay
 
-存活越久分数越高，每经过一个障碍额外加分。HP 归零游戏结束。
+Run in three lanes while obstacles approach from the distance.
 
-## 排行榜
+- Red low barriers should be jumped over.
+- Blue high barriers should be avoided by sliding.
+- Train blocks should be avoided by changing lanes.
+- Taking damage gives temporary invincibility.
+- Passing obstacles and surviving longer increases the score.
+- Saved results keep only the latest 10 runs.
 
-本地分数记录保存在 `scores.dat`，保留前 10 名。如果本次分数够上榜，游戏结束后会弹姓名输入界面，输入名字后存入排行榜，主菜单和游戏结束界面都能查看。
+## Characters
 
-## 图片和音效
+Choose a character before each run.
 
-没有外部资源也能玩——每个模型都有 GDI 绘制的占位图。如果你想用自定义图片，把 BMP 文件放进 `assets/` 目录：
+- Runner: balanced.
+- Sprinter: faster but fragile.
+- Tank: more HP and low-barrier immunity.
+- Jumper: double jump.
+
+Tank has a payment popup gate. Keep `Pay.png` in the project root. The first
+time Tank is confirmed in a program session, the game shows `Pay.png` instead
+of starting. Close it with `Esc`, `Enter`, `Space`, or the `X` button, then
+confirm Tank again to play.
+
+## Optional Assets
+
+The game works without external BMP assets because each model has a GDI
+placeholder. Obstacle images are drawn inside the obstacle shape; they no longer
+replace the whole obstacle outline. This keeps red low barriers, blue high
+barriers, and train blocks visible even when custom images are very large.
+
+Optional files:
 
 - `assets/player_run_0.bmp`
 - `assets/player_run_1.bmp`
@@ -60,6 +72,13 @@ mingw32-make run       # 编译完直接跑
 - `assets/player_crouch.bmp`
 - `assets/obstacle_ground.bmp`
 - `assets/obstacle_air.bmp`
+- `assets/obstacle_train.bmp`
 - `assets/hit.wav`
 
-用 BMP 格式最省事，Win32/GDI 原生支持。
+`Pay.png` is loaded separately from the project root using GDI+.
+
+Suggested obstacle image sizes:
+
+- `obstacle_ground.bmp`: about `100x60`
+- `obstacle_air.bmp`: about `120x70`
+- `obstacle_train.bmp`: about `140x180`

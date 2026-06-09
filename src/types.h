@@ -8,6 +8,7 @@ typedef enum GameState {
     STATE_MENU = 0,
     STATE_HELP,
     STATE_CHAR_SELECT,
+    STATE_PAY_POPUP,
     STATE_PLAYING,
     STATE_GAME_OVER,
     STATE_LEADERBOARD,
@@ -65,6 +66,8 @@ typedef struct Assets {
     Sprite player_crouch;
     Sprite obstacle_ground;
     Sprite obstacle_air;
+    Sprite obstacle_train;
+    Sprite pay_image;
     int hit_sound_available;
 } Assets;
 
@@ -120,6 +123,7 @@ typedef struct Game {
     GameState previous_state;
     CharacterType character;
     int char_select_index;
+    int tank_pay_seen;
     Player player;
     Obstacle obstacles[MAX_OBSTACLES];
     Background background;

@@ -40,6 +40,7 @@
 #define TRAIN_BLOCK_HEIGHT 168
 
 #define DEBUG_HITBOX 0
+#define DEBUG_ASSET_MARKERS 0
 
 #define START_SPEED 360.0f
 #define MAX_SPEED 780.0f

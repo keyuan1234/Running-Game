@@ -302,6 +302,88 @@ static void draw_train_placeholder(HDC hdc, const Obstacle *obstacle)
     DeleteObject(window);
 }
 
+static void draw_sprite_inside_rect(HDC hdc, const Sprite *sprite, RECT rect, int padding)
+{
+    int inner_w;
+    int inner_h;
+    int draw_w;
+    int draw_h;
+    int draw_x;
+    int draw_y;
+    float scale_w;
+    float scale_h;
+    float scale;
+
+    if (!sprite || !sprite->loaded || !sprite->bitmap || sprite->width <= 0 || sprite->height <= 0) {
+        return;
+    }
+
+    rect.left += padding;
+    rect.top += padding;
+    rect.right -= padding;
+    rect.bottom -= padding;
+
+    inner_w = rect.right - rect.left;
+    inner_h = rect.bottom - rect.top;
+    if (inner_w <= 4 || inner_h <= 4) {
+        return;
+    }
+
+    scale_w = (float)inner_w / (float)sprite->width;
+    scale_h = (float)inner_h / (float)sprite->height;
+    scale = scale_w < scale_h ? scale_w : scale_h;
+
+    draw_w = (int)(sprite->width * scale);
+    draw_h = (int)(sprite->height * scale);
+    if (draw_w < 2 || draw_h < 2) {
+        return;
+    }
+
+    draw_x = rect.left + (inner_w - draw_w) / 2;
+    draw_y = rect.top + (inner_h - draw_h) / 2;
+    sprite_draw(hdc, sprite, draw_x, draw_y, draw_w, draw_h);
+
+#if DEBUG_ASSET_MARKERS
+    {
+        RECT marker = { rect.left, rect.top, rect.left + 34, rect.top + 16 };
+        HBRUSH marker_brush = CreateSolidBrush(RGB(255, 220, 40));
+        HGDIOBJ old_marker_brush = SelectObject(hdc, marker_brush);
+        HPEN marker_pen = CreatePen(PS_SOLID, 1, RGB(40, 40, 20));
+        HGDIOBJ old_marker_pen = SelectObject(hdc, marker_pen);
+        Rectangle(hdc, marker.left, marker.top, marker.right, marker.bottom);
+        SelectObject(hdc, old_marker_pen);
+        SelectObject(hdc, old_marker_brush);
+        DeleteObject(marker_pen);
+        DeleteObject(marker_brush);
+        SetBkMode(hdc, TRANSPARENT);
+        SetTextColor(hdc, RGB(30, 30, 20));
+        TextOutA(hdc, marker.left + 4, marker.top + 1, "IMG", 3);
+    }
+#endif
+}
+
+static RECT obstacle_texture_rect(const Obstacle *obstacle)
+{
+    RECT rect = obstacle->screen_rect;
+    if (obstacle->kind == BARRIER_LOW) {
+        rect.left += obstacle->width / 8;
+        rect.right -= obstacle->width / 8;
+        rect.top += obstacle->height / 6;
+        rect.bottom -= obstacle->height / 6;
+    } else if (obstacle->kind == BARRIER_HIGH) {
+        rect.left += obstacle->width / 7;
+        rect.right -= obstacle->width / 7;
+        rect.top += obstacle->height / 4;
+        rect.bottom -= obstacle->height / 4;
+    } else {
+        rect.left += obstacle->width / 7;
+        rect.right -= obstacle->width / 7;
+        rect.top += obstacle->height / 5;
+        rect.bottom = rect.top + obstacle->height / 3;
+    }
+    return rect;
+}
+
 void obstacles_draw(HDC hdc, const Obstacle obstacles[], int count, const Assets *assets)
 {
     int drawn[MAX_OBSTACLES];
@@ -327,17 +409,19 @@ void obstacles_draw(HDC hdc, const Obstacle obstacles[], int count, const Assets
         {
             const Obstacle *obstacle = &obstacles[best];
             const Sprite *sprite = NULL;
-        sprite = obstacle->kind == BARRIER_HIGH ? &assets->obstacle_air : &assets->obstacle_ground;
-        if (sprite && sprite->loaded) {
-            sprite_draw(hdc, sprite, obstacle->screen_rect.left, obstacle->screen_rect.top,
-                        obstacle->width, obstacle->height);
-        } else if (obstacle->kind == BARRIER_LOW) {
-            draw_ground_placeholder(hdc, obstacle);
-        } else if (obstacle->kind == BARRIER_HIGH) {
-            draw_air_placeholder(hdc, obstacle);
-        } else {
-            draw_train_placeholder(hdc, obstacle);
-        }
+            RECT texture_rect;
+            if (obstacle->kind == BARRIER_LOW) {
+                draw_ground_placeholder(hdc, obstacle);
+                sprite = &assets->obstacle_ground;
+            } else if (obstacle->kind == BARRIER_HIGH) {
+                draw_air_placeholder(hdc, obstacle);
+                sprite = &assets->obstacle_air;
+            } else {
+                draw_train_placeholder(hdc, obstacle);
+                sprite = &assets->obstacle_train;
+            }
+            texture_rect = obstacle_texture_rect(obstacle);
+            draw_sprite_inside_rect(hdc, sprite, texture_rect, 2);
 #if DEBUG_HITBOX
         {
             RECT hitbox = obstacle_get_rect(obstacle);
