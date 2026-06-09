@@ -1,56 +1,58 @@
-# Subway Runner 2D
+# 地铁跑酷 2D
 
-A strict C11 Windows pseudo-3D running game built with Win32/GDI. It keeps the
-project in C and does not include EasyX because the bundled EasyX for MinGW
-header requires C++ compilation.
+纯 C11 + Win32/GDI 写的一个伪 3D 跑酷小游戏。没依赖任何第三方图形库——EasyX
+的 MinGW 头文件需要 C++ 编译所以没用，全部 GDI 裸写。
 
-## Build
+## 编译运行
 
-Use MinGW-w64 on Windows:
+Windows 上装好 MinGW-w64：
 
 ```powershell
-mingw32-make
+mingw32-make           # 编译
+mingw32-make clean     # 清理 .o 和 exe
+mingw32-make run       # 编译完直接跑
 ```
 
-Then run:
+或者直接：
 
 ```powershell
 .\running_game.exe
 ```
 
-## Controls
+## 操作
 
-- `1`: start game from the main menu
-- `2`: show game help
-- `3`: exit from the main menu
-- `A`: move one lane left
-- `D`: move one lane right
-- `Space`: jump over low barriers
-- `S`: slide under high barriers; while jumping, dive down immediately
-- `W`: hold to boost speed
-- `Esc`: return to the menu
-- `R`: restart after game over
+- `1` 开始游戏
+- `2` 游戏帮助
+- `3` 退出
+- `4` 排行榜
+- `A` 左移一个车道
+- `D` 右移一个车道
+- `Space` 跳跃，翻过低障碍
+- `S` 滑铲，钻过高障碍；在空中按时快速下坠
+- `W` 按住加速
+- `Esc` 返回菜单
+- `R` 结束后重开
+- `L` 结束后查看排行榜
 
-## Gameplay
+## 玩法
 
-The player runs in three lanes. Obstacles come from the distance and grow larger
-as they approach, creating a 2D pseudo-3D subway-runner view.
+三条车道，障碍物从远处逼近（近大远小，伪 3D）。
 
-- Red low barriers should be jumped over.
-- Blue high barriers should be avoided by sliding.
-- Large train blocks should be avoided by changing lanes.
-- Pressing `S` in the air makes the player dive down quickly and slide after
-  landing.
-- After taking damage, the player is invincible for 3 seconds and flashes.
+- 红色低栏：跳过去
+- 蓝色高栏：滑铲钻过去
+- 火车车厢：换车道躲
+- 受伤后 3 秒无敌，角色闪烁
+- 有跳跃缓冲：落地前 0.12 秒内按跳跃，落地后自动起跳
 
-Passing obstacles and surviving over time increases the score. Hitting an
-obstacle decreases HP unless invincibility is active. The game ends when HP
-reaches zero.
+存活越久分数越高，每经过一个障碍额外加分。HP 归零游戏结束。
 
-## Optional Assets
+## 排行榜
 
-The game works without external assets. If these files exist, they are loaded
-from `assets/`; otherwise the game draws fallback placeholders:
+本地分数记录保存在 `scores.dat`，保留前 10 名。如果本次分数够上榜，游戏结束后会弹姓名输入界面，输入名字后存入排行榜，主菜单和游戏结束界面都能查看。
+
+## 图片和音效
+
+没有外部资源也能玩——每个模型都有 GDI 绘制的占位图。如果你想用自定义图片，把 BMP 文件放进 `assets/` 目录：
 
 - `assets/player_run_0.bmp`
 - `assets/player_run_1.bmp`
@@ -60,4 +62,4 @@ from `assets/`; otherwise the game draws fallback placeholders:
 - `assets/obstacle_air.bmp`
 - `assets/hit.wav`
 
-BMP files are recommended because they are loaded directly through Win32/GDI.
+用 BMP 格式最省事，Win32/GDI 原生支持。
