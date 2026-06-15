@@ -17,6 +17,16 @@
 static Game g_game;
 static int g_running = 1;
 
+static RECT pay_close_rect(void)
+{
+    RECT rect;
+    rect.left = WINDOW_WIDTH - 86;
+    rect.top = 38;
+    rect.right = WINDOW_WIDTH - 42;
+    rect.bottom = 82;
+    return rect;
+}
+
 static const char *char_name(CharacterType c)
 {
     switch (c) {
@@ -78,10 +88,12 @@ static void game_reset(Game *game)
     Assets keep_assets = game->assets;
     HighScores keep_scores = game->high_scores;
     CharacterType keep_character = game->character;
+    int keep_tank_pay_seen = game->tank_pay_seen;
     memset(game, 0, sizeof(*game));
     game->assets = keep_assets;
     game->high_scores = keep_scores;
     game->character = keep_character;
+    game->tank_pay_seen = keep_tank_pay_seen;
     game->state = STATE_PLAYING;
     game->previous_state = STATE_MENU;
     game->base_speed = START_SPEED;
@@ -108,6 +120,7 @@ static void game_init(Game *game)
     game->previous_state = STATE_MENU;
     game->character = CHAR_RUNNER;
     game->char_select_index = 0;
+    game->tank_pay_seen = 0;
     game->last_obstacle_kind = -1;
     assets_load(&game->assets);
     scores_load(&game->high_scores);
@@ -344,7 +357,7 @@ static void draw_game_over(HDC hdc)
     draw_text_center(hdc, buffer, 306, 24, PANEL_TEXT_COLOR, FW_NORMAL);
 
     if (g_game.latest_high_score_rank > 0) {
-        sprintf(buffer, "NEW HIGH SCORE!  Rank #%d", g_game.latest_high_score_rank);
+        sprintf(buffer, "SAVED TO RECENT RUNS!  #%d", g_game.latest_high_score_rank);
         draw_text_center(hdc, buffer, 170, 26, RGB(255, 220, 80), FW_BOLD);
     }
 
@@ -373,15 +386,15 @@ static void draw_leaderboard(HDC hdc)
     panel.bottom = 500;
     draw_panel(hdc, panel, PANEL_COLOR, PANEL_BORDER, 24);
 
-    draw_text_center(hdc, "HIGH SCORES", 69, 44, RGB(8, 14, 28), FW_BOLD);
-    draw_text_center(hdc, "HIGH SCORES", 66, 44, PANEL_TITLE_COLOR, FW_BOLD);
+    draw_text_center(hdc, "RECENT RUNS", 69, 44, RGB(8, 14, 28), FW_BOLD);
+    draw_text_center(hdc, "RECENT RUNS", 66, 44, PANEL_TITLE_COLOR, FW_BOLD);
 
     col_rank = panel.left + 35;
     col_name = panel.left + 110;
     col_score = panel.left + 350;
     col_time = panel.left + 510;
 
-    draw_text_left(hdc, "Rank", col_rank, 118, 18, RGB(140, 160, 180), FW_BOLD);
+    draw_text_left(hdc, "No.", col_rank, 118, 18, RGB(140, 160, 180), FW_BOLD);
     draw_text_left(hdc, "Name", col_name, 118, 18, RGB(140, 160, 180), FW_BOLD);
     draw_text_left(hdc, "Score", col_score, 118, 18, RGB(140, 160, 180), FW_BOLD);
     draw_text_left(hdc, "Time", col_time, 118, 18, RGB(140, 160, 180), FW_BOLD);
@@ -389,7 +402,7 @@ static void draw_leaderboard(HDC hdc)
     y = 154;
 
     if (g_game.high_scores.count == 0) {
-        draw_text_center(hdc, "No scores yet -- play a game!", 260, 22, PANEL_TEXT_COLOR, FW_NORMAL);
+        draw_text_center(hdc, "No recent runs yet -- play a game!", 260, 22, PANEL_TEXT_COLOR, FW_NORMAL);
     } else {
         for (i = 0; i < g_game.high_scores.count; ++i) {
             const HighScoreEntry *entry = &g_game.high_scores.entries[i];
@@ -624,6 +637,71 @@ static void draw_char_select(HDC hdc)
     draw_text_center(hdc, "A / D  select    Enter  confirm", card_y + card_h + 26, 18, RGB(140, 160, 180), FW_NORMAL);
 }
 
+static void draw_pay_popup(HDC hdc)
+{
+    RECT close_rect;
+    RECT fallback_panel;
+    int max_w = WINDOW_WIDTH - 80;
+    int max_h = WINDOW_HEIGHT - 118;
+    int draw_w;
+    int draw_h;
+    int draw_x;
+    int draw_y;
+    float scale_w;
+    float scale_h;
+    float scale;
+    HBRUSH close_brush;
+    HPEN close_pen;
+    HGDIOBJ old_brush;
+    HGDIOBJ old_pen;
+
+    draw_char_select(hdc);
+    draw_overlay(hdc);
+
+    if (g_game.assets.pay_image.loaded && g_game.assets.pay_image.width > 0 &&
+        g_game.assets.pay_image.height > 0) {
+        scale_w = (float)max_w / (float)g_game.assets.pay_image.width;
+        scale_h = (float)max_h / (float)g_game.assets.pay_image.height;
+        scale = scale_w < scale_h ? scale_w : scale_h;
+        if (scale > 1.0f) {
+            scale = 1.0f;
+        }
+        draw_w = (int)(g_game.assets.pay_image.width * scale);
+        draw_h = (int)(g_game.assets.pay_image.height * scale);
+        draw_x = (WINDOW_WIDTH - draw_w) / 2;
+        draw_y = (WINDOW_HEIGHT - draw_h) / 2 + 14;
+        sprite_draw(hdc, &g_game.assets.pay_image, draw_x, draw_y, draw_w, draw_h);
+    } else {
+        fallback_panel.left = WINDOW_WIDTH / 2 - 300;
+        fallback_panel.top = WINDOW_HEIGHT / 2 - 90;
+        fallback_panel.right = WINDOW_WIDTH / 2 + 300;
+        fallback_panel.bottom = WINDOW_HEIGHT / 2 + 90;
+        draw_panel(hdc, fallback_panel, PANEL_COLOR, RGB(170, 80, 80), 20);
+        draw_text_center(hdc, "Pay.png not found or failed to load", WINDOW_HEIGHT / 2 - 30,
+                         24, RGB(255, 210, 180), FW_BOLD);
+        draw_text_center(hdc, "Press Esc / Enter / Space to return", WINDOW_HEIGHT / 2 + 18,
+                         18, RGB(160, 180, 210), FW_NORMAL);
+    }
+
+    close_rect = pay_close_rect();
+    close_brush = CreateSolidBrush(RGB(120, 38, 38));
+    close_pen = CreatePen(PS_SOLID, 2, RGB(255, 210, 210));
+    old_brush = SelectObject(hdc, close_brush);
+    old_pen = SelectObject(hdc, close_pen);
+    RoundRect(hdc, close_rect.left, close_rect.top, close_rect.right, close_rect.bottom, 12, 12);
+    MoveToEx(hdc, close_rect.left + 12, close_rect.top + 12, NULL);
+    LineTo(hdc, close_rect.right - 12, close_rect.bottom - 12);
+    MoveToEx(hdc, close_rect.right - 12, close_rect.top + 12, NULL);
+    LineTo(hdc, close_rect.left + 12, close_rect.bottom - 12);
+    SelectObject(hdc, old_pen);
+    SelectObject(hdc, old_brush);
+    DeleteObject(close_pen);
+    DeleteObject(close_brush);
+
+    draw_text_center(hdc, "Pay with AliPay or WeChat or you could not start the game with Tank.",
+                     WINDOW_HEIGHT - 34, 18, RGB(255, 235, 180), FW_BOLD);
+}
+
 static void game_update(Game *game, float dt)
 {
     int i;
@@ -650,6 +728,7 @@ static void game_update(Game *game, float dt)
 
     if (game->state == STATE_MENU || game->state == STATE_HELP ||
         game->state == STATE_CHAR_SELECT ||
+        game->state == STATE_PAY_POPUP ||
         game->state == STATE_GAME_OVER || game->state == STATE_LEADERBOARD ||
         game->state == STATE_NAME_ENTRY) {
         background_update(&game->background, dt, START_SPEED * 0.45f);
@@ -745,6 +824,8 @@ static void game_render(HDC hdc)
         draw_help(hdc);
     } else if (g_game.state == STATE_CHAR_SELECT) {
         draw_char_select(hdc);
+    } else if (g_game.state == STATE_PAY_POPUP) {
+        draw_pay_popup(hdc);
     } else if (g_game.state == STATE_GAME_OVER) {
         draw_game_over(hdc);
     } else if (g_game.state == STATE_LEADERBOARD) {
@@ -860,7 +941,19 @@ static void handle_key_down(WPARAM key, LPARAM lparam)
             }
         } else if (key == VK_RETURN || key == VK_SPACE) {
             g_game.character = (CharacterType)g_game.char_select_index;
-            game_reset(&g_game);
+            if (g_game.character == CHAR_TANK && !g_game.tank_pay_seen) {
+                g_game.tank_pay_seen = 1;
+                g_game.state = STATE_PAY_POPUP;
+            } else {
+                game_reset(&g_game);
+            }
+        }
+        return;
+    }
+
+    if (g_game.state == STATE_PAY_POPUP) {
+        if (key == VK_ESCAPE || key == VK_RETURN || key == VK_SPACE) {
+            g_game.state = STATE_CHAR_SELECT;
         }
         return;
     }
@@ -941,6 +1034,19 @@ static void handle_key_up(WPARAM key)
     }
 }
 
+static void handle_mouse_down(int x, int y)
+{
+    RECT close_rect;
+    if (g_game.state != STATE_PAY_POPUP) {
+        return;
+    }
+    close_rect = pay_close_rect();
+    if (x >= close_rect.left && x <= close_rect.right &&
+        y >= close_rect.top && y <= close_rect.bottom) {
+        g_game.state = STATE_CHAR_SELECT;
+    }
+}
+
 static LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam)
 {
     switch (message) {
@@ -949,6 +1055,9 @@ static LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM wparam, LPAR
         return 0;
     case WM_KEYUP:
         handle_key_up(wparam);
+        return 0;
+    case WM_LBUTTONDOWN:
+        handle_mouse_down(LOWORD(lparam), HIWORD(lparam));
         return 0;
     case WM_ERASEBKGND:
         return 1;
@@ -973,6 +1082,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous_instance, LPSTR comman
     (void)command_line;
 
     srand((unsigned int)time(NULL));
+    resources_gdiplus_startup();
     game_init(&g_game);
 
     memset(&window_class, 0, sizeof(window_class));
@@ -985,6 +1095,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous_instance, LPSTR comman
     if (!RegisterClassA(&window_class)) {
         MessageBoxA(NULL, "Failed to register window class.", "Running Game", MB_ICONERROR);
         assets_free(&g_game.assets);
+        resources_gdiplus_shutdown();
         return 1;
     }
 
@@ -1005,6 +1116,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous_instance, LPSTR comman
     if (!hwnd) {
         MessageBoxA(NULL, "Failed to create window.", "Running Game", MB_ICONERROR);
         assets_free(&g_game.assets);
+        resources_gdiplus_shutdown();
         return 1;
     }
 
@@ -1042,5 +1154,6 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous_instance, LPSTR comman
     }
 
     assets_free(&g_game.assets);
+    resources_gdiplus_shutdown();
     return 0;
 }
